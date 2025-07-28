@@ -173,11 +173,11 @@ namespace VIP_PostContent_Cache\Misc {
 namespace VIP_PostContent_Cache\Allow {
 
     function blocks( $block_name ) {
-		return apply_filters( 'vip_postcontent_cache_is_bypassed', false, $block_name );
+		return apply_filters( 'vip_thecontentcache_bypass', false, $block_name );
     }
 
 	function posttypes() {
-		return apply_filters( 'vip_postcontent_cache_is_posttype', [ 'post', 'page' ] );
+		return apply_filters( 'vip_thecontentcache_posttypes', [ 'post', 'page' ] );
 	}
 
 }
