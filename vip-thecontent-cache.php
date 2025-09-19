@@ -10,7 +10,7 @@
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Requires at least: 6.0
  * Tested up to:      6.8
- * Requires PHP:      8.3
+ * Requires PHP:      8.0
  */
 
 // Main
@@ -43,42 +43,51 @@ namespace VIP_PostContent_Cache\Hooks {
 
         \add_action( 'template_redirect', 
             __NAMESPACE__ . '\\ensure_post_content_loaded', 992 );
+
+        \add_action( 'vip_thecontentcache_schedule_set', 
+            '\VIP_PostContent_Cache\Cache\set', 10 );
     }
 
     /**
      * Ensures the current post's content is cached, if it matches allowed post types and is not already cached.
      */
     function ensure_post_content_cached() {
-        if ( ! is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
+        if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
 
         global $post;
 		if ( ! ( $post instanceof \WP_Post ) ) return;
+        if ( ! \has_blocks( $post ) ) return;
     
         $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
-        if ( ! $cached ) \VIP_PostContent_Cache\Cache\set( $post->ID );
+        if ( empty( $cached ) ) \VIP_PostContent_Cache\Cache\set( $post->ID );
     }
 
     /**
      * Attaches the content-loading filter to `the_content` to replace it with cached output and enqueue assets.
      */
     function ensure_post_content_loaded() {
-        if ( ! is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
+        if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
 
-        add_filter( 'the_content', '\VIP_PostContent_Cache\Cache\load', 1, 1 );
+        \add_filter( 'the_content', '\VIP_PostContent_Cache\Cache\load', 1, 1 );
     }
 
     /**
-     * Filters block rendering during caching, allowing bypassed blocks to be skipped and preserved in raw form.
+     * Filters block pre-rendering during caching, allowing bypassed blocks to be skipped and preserved in raw form.
      *
-     * @param string $block_content Rendered block HTML.
+     * @param string $pre_render Rendered block HTML.
      * @param array  $block         Block structure array.
      * @return string
      */
-    function render_block_filter( $block_content, $block ) {
-        if ( \VIP_PostContent_Cache\Allow\blocks( $block['blockName'] ) ) {
-            return serialize_block( $block );
+    function pre_render_block_filter( $pre_render, $block ) {
+        $name = $block['blockName'] ?? null;
+
+        if ( $name && \VIP_PostContent_Cache\Allow\bypass( $name ) ) {
+            // Return raw block source (with <!-- wp:... -->) so it stays in the cache,
+            // and will be rendered on each request.
+            return \serialize_block( $block );
         }
-        return $block_content;
+
+        return $pre_render;
     }
 
 }
@@ -87,30 +96,75 @@ namespace VIP_PostContent_Cache\Hooks {
 namespace VIP_PostContent_Cache\Cache {
 
     /**
+     * Returns a reference to a per-request in-memory store.
+     *
+     * Used to memoize cached content and enqueue lists within the current request
+     * so that repeated calls to set()/get() avoid extra object-cache round-trips.
+     * The store is a static array that exists only for the lifetime of the request.
+     *
+     * Keys: post IDs (int).
+     * Values: ['content' => string, 'enqueues' => string[]].
+     *
+     * Usage:
+     *   $mem =& _local_store();
+     *   $mem[ $post_id ] = ['content' => $html, 'enqueues' => $blocks];
+     *
+     * @return array Reference to the per-request memoization array.
+     */
+    function &_local_store(): array {
+        static $mem = []; return $mem;
+    }
+
+    /**
      * Parses and renders the post content, collects block dependencies, and stores both in object cache.
      *
      * @param int $post_id Post ID.
      */
-    function set( $post_id ) {
-        $post = \get_post( $post_id );
-        if ( ! ( $post instanceof \WP_Post ) ) return;
+    function set( int $post_id ): void {
+        $the_post = \get_post( $post_id );
+        if ( ! ( $the_post instanceof \WP_Post ) ) return;
 
-        $blocks      = \parse_blocks( $post->post_content );
+        // Prime global $post for filters/shortcodes that depend on it
+        global $post;
+        $prev_post = $post ?? null;
+        $post = $the_post;
+        \setup_postdata( $post );
+
+        // Process blocks
+        $blocks      = \parse_blocks( $the_post->post_content );
         $block_names = \VIP_PostContent_Cache\Misc\collect_block_names( $blocks );
 
-        \add_filter( 'render_block', '\VIP_PostContent_Cache\Hooks\render_block_filter', 10, 2 );
-        $content     = \apply_filters( 'the_content', $post->post_content );
-        \remove_filter( 'render_block', '\VIP_PostContent_Cache\Hooks\render_block_filter', 10, 2 );
+        // Filter the necessary blocks and prepare content for caching
+        \add_filter( 'pre_render_block', '\VIP_PostContent_Cache\Hooks\pre_render_block_filter', 10, 2 );
 
+        // Process content and blocks
+        $filtered_content = \apply_filters( 'the_content', $the_post->post_content );
+
+        // disconnect filters
+        \remove_filter( 'pre_render_block', '\VIP_PostContent_Cache\Hooks\pre_render_block_filter', 10, 2 );
+
+        // Restore globals
+        \wp_reset_postdata();
+        $post = $prev_post;
+
+        // Cache block list and content, if applicable
         if ( ! empty( $block_names ) ) {
-            $_cached_key = key( $post_id );
 
+            // Set Local Cache
+            $mem =& _local_store();
+            $mem[ $post_id ] = [
+                'content' => $filtered_content, 
+                'enqueues' => $block_names,
+            ];
+
+            // Set Object Cache
+            $_cached_key = key( $post_id );
             \wp_cache_set( $_cached_key . '_enqueues',
-                maybe_serialize( $block_names ), 
+                \maybe_serialize( $block_names ), 
                 \VIP_PostContent_Cache\CACHE_GROUP, 
                 HOUR_IN_SECONDS );
             \wp_cache_set( $_cached_key . '_content',
-                $content, 
+                $filtered_content, 
                 \VIP_PostContent_Cache\CACHE_GROUP, 
                 HOUR_IN_SECONDS );
         }
@@ -122,11 +176,20 @@ namespace VIP_PostContent_Cache\Cache {
      * @param int $post_id Post ID.
      * @return array|null Returns array with 'content' and 'enqueues', or null if not cached.
      */
-    function get( $post_id ) {
+    function get( int $post_id ): ?array {
+
+        // Get from Local Storage, if it was set on this run, without invoking cache
+        $mem =& _local_store();
+        if ( isset( $mem[ $post_id ] ) ) return $mem[ $post_id ];
+
+        // Get from Object Cache
         $_cached_key    = key( $post_id );
+
+        // Content Object Cache
         $_cached_result = \wp_cache_get( $_cached_key . '_content', \VIP_PostContent_Cache\CACHE_GROUP );
         if ( false === $_cached_result ) return null;
 
+        // Enqueue Object Cache
         $_enqueues  = \maybe_unserialize( \wp_cache_get( $_cached_key . '_enqueues', \VIP_PostContent_Cache\CACHE_GROUP ) );
         if ( false === $_enqueues ) return null;
 
@@ -142,14 +205,14 @@ namespace VIP_PostContent_Cache\Cache {
      * @param string $content Original content.
      * @return string Cached or original content.
      */
-    function load( $content ) {
+    function load( string $content ): string {
         if ( \is_admin() || \wp_doing_ajax() || \wp_is_json_request() 
 			|| !\is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) {
             return $content;
         }
 
         global $post;
-        if ( ! ( $post instanceof \WP_Post ) ) return;
+        if ( ! ( $post instanceof \WP_Post ) ) return $content;
 
         $_cached_result = \VIP_PostContent_Cache\Cache\get( $post->ID );
 
@@ -169,7 +232,7 @@ namespace VIP_PostContent_Cache\Cache {
      * @param int $post_id
      * @return string
      */
-    function key( $post_id ) {
+    function key( int $post_id ): string {
         return '_vip_thecontent_' . $post_id;
     }
 
@@ -189,7 +252,7 @@ namespace VIP_PostContent_Cache\Misc {
 
         foreach ( $blocks as $block ) {
             if ( ! empty( $block['blockName'] ) && 
-            !\VIP_PostContent_Cache\Allow\blocks( $block['blockName'] ) ) {
+            !\VIP_PostContent_Cache\Allow\bypass( $block['blockName'] ) ) {
                 $names[] = $block['blockName'];
             }
             if ( ! empty( $block['innerBlocks'] ) ) {
@@ -211,9 +274,24 @@ namespace VIP_PostContent_Cache\Misc {
         $registry = \WP_Block_Type_Registry::get_instance();
         $block_type = $registry->get_registered( $block_name );
 
-        if ( $block_type ) {
-            if ( !empty( $block_type->style ) )  \wp_enqueue_style( $block_type->style );
-            if ( !empty( $block_type->script ) ) \wp_enqueue_script( $block_type->script );
+        if ( ! $block_type ) return;
+
+        // style can be string or array
+        $styles = $block_type->style ?? [];
+        foreach ( (array) $styles as $h ) {
+            if ( is_string( $h ) && $h !== '' ) \wp_enqueue_style( $h );
+        }
+
+        // prefer view_script for frontend behavior
+        $view_scripts = $block_type->view_script ?? [];
+        foreach ( (array) $view_scripts as $h ) {
+            if ( is_string( $h ) && $h !== '' ) \wp_enqueue_script( $h );
+        }
+
+        // keep legacy 'script' for blocks that still use it
+        $scripts = $block_type->script ?? [];
+        foreach ( (array) $scripts as $h ) {
+            if ( is_string( $h ) && $h !== '' ) \wp_enqueue_script( $h );
         }
     }
 
@@ -229,8 +307,8 @@ namespace VIP_PostContent_Cache\Allow {
      * @param string $block_name
      * @return bool
      */
-    function blocks( $block_name ) {
-		return apply_filters( 'vip_thecontentcache_bypass', false, $block_name );
+    function bypass( $block_name ) {
+		return \apply_filters( 'vip_thecontentcache_bypass', false, $block_name );
     }
 
     /**
@@ -240,7 +318,7 @@ namespace VIP_PostContent_Cache\Allow {
      * @return array
      */
 	function posttypes() {
-		return apply_filters( 'vip_thecontentcache_posttypes', [ 'post', 'page' ] );
+		return \apply_filters( 'vip_thecontentcache_posttypes', [ 'post', 'page' ] );
 	}
 
 }
@@ -282,9 +360,10 @@ namespace VIP_PostContent_Cache\Admin {
 		if ( ! in_array( $post->post_type, \VIP_PostContent_Cache\Allow\posttypes(), true ) ) return;
 		if ( \wp_is_post_autosave( $post_id ) || \wp_is_post_revision( $post_id ) ) return;
 
-		wp_schedule_single_event( time() + 30, '\VIP_PostContent_Cache\Cache\set(', [
-			'post_id' => $post_id,
-		] );
+        if ( ! \wp_next_scheduled( 'vip_thecontentcache_schedule_set', [ $post_id ] ) ) {
+            wp_schedule_single_event( time() + 10, 'vip_thecontentcache_schedule_set', [ $post_id ] );
+        }
+
 	}
 
 }

@@ -8,7 +8,7 @@ Additional filters are available to include custom post-types in the caching log
 
 ## Block Bypass Filter
 
-Certain Gutenberg blocks can be excluded from cached rendering using the `vip_thecontentcache_bypass` filter. The filter receives two parameters: a `$flag` and the `$block_name`. To bypass caching for a specific block, return false when the block name matches your condition.
+Certain Gutenberg blocks can be excluded from cached rendering using the `vip_thecontentcache_bypass` filter. The filter receives two parameters: a `$flag` and the `$block_name`. To bypass caching for a specific block, return `true` when the block name matches your condition.
 
 ### Example:
 
@@ -16,7 +16,7 @@ Certain Gutenberg blocks can be excluded from cached rendering using the `vip_th
 add_filter( 'vip_thecontentcache_bypass', 
     'vip_cache_thecontent_block_bypass', 10, 2 );
 function vip_cache_thecontent_block_bypass( $flag, $block_name ) {
-    if ( 'myblock/name' === $block_name ) return false;
+    if ( 'myblock/name' === $block_name ) return true;
     return $flag;
 }
 ```
