@@ -72,11 +72,12 @@ namespace VIP_PostContent_Cache\Hooks {
     }
 
     /**
-     * Filters block pre-rendering during caching, allowing bypassed blocks to be skipped and preserved in raw form.
+     * Filters block pre-rendering during caching. If a block is bypassed,
+     * return its serialized source so it stays dynamic at view time.
      *
-     * @param string $pre_render Rendered block HTML.
-     * @param array  $block         Block structure array.
-     * @return string
+     * @param string|null  $pre_render Pre-render value (null to continue normal rendering).
+     * @param array        $block      Parsed block array.
+     * @return string|null Serialized source or null to continue.
      */
     function pre_render_block_filter( $pre_render, $block ) {
         $name = $block['blockName'] ?? null;
@@ -269,6 +270,25 @@ namespace VIP_PostContent_Cache\Misc {
         return $names;
     }
 
+    /**
+     * Collects registered front-end asset handles for a block.
+     *
+     * Reads the block’s registration (via WP_Block_Type_Registry) and returns a
+     * normalized list of handles for **styles** and **front-end scripts**:
+     * - Styles come from `$block_type->style` (string|array).
+     * - Scripts prefer `$block_type->view_script` (front-end only), then legacy
+     *   `$block_type->script` (editor+front-end in older blocks).
+     *
+     * Editor-only assets (e.g., editor_style/editor_script) are intentionally ignored.
+     *
+     * @param string $block_name Block name (e.g., 'core/paragraph').
+     * @return array{style:string[], script:string[]}|null Array of handles, or null if the block is not registered.
+     *
+     * @note Handles may be registered as a string or an array; this function
+     *       normalizes them to arrays and filters out empty values.
+     * @example
+     *   // ['style' => ['core-blocks'], 'script' => ['my-frontend-js']]
+     */
     function get_block_assets( $block_name ) {
         $registry = \WP_Block_Type_Registry::get_instance();
         $block_type = $registry->get_registered( $block_name );
@@ -299,9 +319,23 @@ namespace VIP_PostContent_Cache\Misc {
     }
 
     /**
-     * Enqueues CSS and JS assets for a registered block by its name.
+     * Enqueues front-end styles and scripts for the given blocks (bulk, de-duplicated).
      *
-     * @param array $blocks_list
+     * For each block name, this gathers handles via get_block_assets() and enqueues
+     * them through the global registries:
+     * - Styles are enqueued with `wp_styles()->enqueue( $handles )`.
+     * - Scripts are enqueued with `wp_scripts()->enqueue( $handles )`.
+     *
+     * Dependency resolution is handled by WordPress, as with individual enqueue calls.
+     * Editor-only assets are not enqueued here.
+     *
+     * @param string[] $blocks_list List of block names present in the rendered content.
+     * @return void
+     *
+     * @best-practice Call before `wp_head` runs so styles land in `<head>`; keeping
+     *               a late call as a safety net is acceptable for scripts.
+     * @example
+     *   enqueue_block_assets( ['core/paragraph', 'my/plugin-block'] );
      */
     function enqueue_block_assets( $blocks_list ) {
         if (empty( $blocks_list ) ) return;
