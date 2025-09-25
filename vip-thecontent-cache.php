@@ -125,12 +125,6 @@ namespace VIP_PostContent_Cache\Cache {
         $the_post = \get_post( $post_id );
         if ( ! ( $the_post instanceof \WP_Post ) ) return;
 
-        // Prime global $post for filters/shortcodes that depend on it
-        global $post;
-        $prev_post = $post ?? null;
-        $post = $the_post;
-        \setup_postdata( $post );
-
         // Process blocks
         $blocks      = \parse_blocks( $the_post->post_content );
         $block_names = \VIP_PostContent_Cache\Misc\collect_block_names( $blocks );
@@ -143,10 +137,6 @@ namespace VIP_PostContent_Cache\Cache {
 
         // disconnect filters
         \remove_filter( 'pre_render_block', '\VIP_PostContent_Cache\Hooks\pre_render_block_filter', 10, 2 );
-
-        // Restore globals
-        \wp_reset_postdata();
-        $post = $prev_post;
 
         // Cache block list and content, if applicable
         if ( ! empty( $block_names ) ) {
