@@ -150,6 +150,12 @@ namespace VIP_PostContent_Cache\Cache {
         // Cache block list and content, if applicable
         if ( ! empty( $block_names ) ) {
 
+            // Filter out blocks that might not have either scripts or styles
+            foreach( $block_names as $index => $tmp_block_name ) {
+                $tmp = (array) \VIP_PostContent_Cache\Misc\get_block_assets( $tmp_block_name );
+                if ( empty( $tmp['style'] ) && empty( $tmp['script'] ) ) unset( $block_names[ $index ] );
+            }
+
             // Set Local Cache
             $mem =& _local_store();
             $mem[ $post_id ] = [
@@ -217,9 +223,7 @@ namespace VIP_PostContent_Cache\Cache {
         $_cached_result = \VIP_PostContent_Cache\Cache\get( $post->ID );
 
         if ( ! empty( $_cached_result['enqueues'] ) && ! empty( $_cached_result['content'] ) ) {
-            foreach ( $_cached_result['enqueues'] as $block_name ) {
-                \VIP_PostContent_Cache\Misc\enqueue_block_assets( $block_name );
-            }
+            \VIP_PostContent_Cache\Misc\enqueue_block_assets( $_cached_result['enqueues'] );
             return $_cached_result['content'];
         }
 
@@ -265,33 +269,72 @@ namespace VIP_PostContent_Cache\Misc {
         return $names;
     }
 
-    /**
-     * Enqueues CSS and JS assets for a registered block by its name.
-     *
-     * @param string $block_name
-     */
-    function enqueue_block_assets( $block_name ) {
+    function get_block_assets( $block_name ) {
         $registry = \WP_Block_Type_Registry::get_instance();
         $block_type = $registry->get_registered( $block_name );
 
-        if ( ! $block_type ) return;
+        if ( ! $block_type ) return null;
+
+        $styles_scripts_list = [ 'style' => [], 'script' => [], ];
 
         // style can be string or array
         $styles = $block_type->style ?? [];
         foreach ( (array) $styles as $h ) {
-            if ( is_string( $h ) && $h !== '' ) \wp_enqueue_style( $h );
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['style'][] = $h;
         }
 
         // prefer view_script for frontend behavior
         $view_scripts = $block_type->view_script ?? [];
         foreach ( (array) $view_scripts as $h ) {
-            if ( is_string( $h ) && $h !== '' ) \wp_enqueue_script( $h );
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['script'][] = $h;
         }
 
         // keep legacy 'script' for blocks that still use it
         $scripts = $block_type->script ?? [];
         foreach ( (array) $scripts as $h ) {
-            if ( is_string( $h ) && $h !== '' ) \wp_enqueue_script( $h );
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['script'][] = $h;
+        }
+
+        return $styles_scripts_list;
+    }
+
+    /**
+     * Enqueues CSS and JS assets for a registered block by its name.
+     *
+     * @param array $blocks_list
+     */
+    function enqueue_block_assets( $blocks_list ) {
+        if (empty( $blocks_list ) ) return;
+        $enqueue_styles = $enqueue_scripts = [];
+
+        foreach ( $blocks_list as $block_name ) {
+            $tmp_block_enqueues = get_block_assets( $block_name );
+
+            if ( ! empty( $tmp_block_enqueues['script'] ) ) {
+                $enqueue_scripts = array_merge( 
+                    (array) $enqueue_scripts, 
+                    (array) $tmp_block_enqueues['script']
+                );
+            }
+            if ( ! empty( $tmp_block_enqueues['style'] ) ) {
+                $enqueue_styles = array_merge(
+                    (array) $enqueue_styles, 
+                    (array) $tmp_block_enqueues['style']
+                );
+
+            }
+        }
+
+        // Handle style enqueues
+        if ( ! empty( $enqueue_styles ) ) {
+            $enqueue_styles = \array_unique( $enqueue_styles );
+            \wp_styles()->enqueue( $enqueue_styles );
+        }
+
+        // Handle script enqueues
+        if ( ! empty( $enqueue_scripts ) ) {
+            $enqueue_scripts = \array_unique( $enqueue_scripts );
+            \wp_scripts()->enqueue( $enqueue_scripts );
         }
     }
 
