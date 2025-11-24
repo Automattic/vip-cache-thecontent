@@ -155,7 +155,7 @@ namespace VIP_PostContent_Cache\Cache {
             ];
 
             // Set Object Cache
-            $_cached_key = key( $post_id );
+            $_cached_key = \VIP_PostContent_Cache\Cache\key( $post_id );
             \wp_cache_set( $_cached_key . '_enqueues',
                 \maybe_serialize( $block_names ), 
                 \VIP_PostContent_Cache\CACHE_GROUP, 
@@ -180,7 +180,7 @@ namespace VIP_PostContent_Cache\Cache {
         if ( isset( $mem[ $post_id ] ) ) return $mem[ $post_id ];
 
         // Get from Object Cache
-        $_cached_key    = key( $post_id );
+        $_cached_key    = \VIP_PostContent_Cache\Cache\key( $post_id );
 
         // Content Object Cache
         $_cached_result = \wp_cache_get( $_cached_key . '_content', \VIP_PostContent_Cache\CACHE_GROUP );
