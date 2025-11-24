@@ -38,13 +38,13 @@ namespace VIP_PostContent_Cache\Hooks {
      * Registers front-end hooks for caching and loading post content during template rendering.
      */
     function register() {
-        \add_action( 'template_redirect', 
+        \add_action( 'template_redirect',
             __NAMESPACE__ . '\\ensure_post_content_cached', 991 );
 
-        \add_action( 'template_redirect', 
+        \add_action( 'template_redirect',
             __NAMESPACE__ . '\\ensure_post_content_loaded', 992 );
 
-        \add_action( 'vip_thecontentcache_schedule_set', 
+        \add_action( 'vip_thecontentcache_schedule_set',
             '\VIP_PostContent_Cache\Cache\set', 10 );
     }
 
@@ -57,7 +57,7 @@ namespace VIP_PostContent_Cache\Hooks {
         global $post;
 		if ( ! ( $post instanceof \WP_Post ) ) return;
         if ( ! \has_blocks( $post ) ) return;
-    
+
         $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
         if ( empty( $cached ) ) \VIP_PostContent_Cache\Cache\set( $post->ID );
     }
@@ -150,19 +150,19 @@ namespace VIP_PostContent_Cache\Cache {
             // Set Local Cache
             $mem =& _local_store();
             $mem[ $post_id ] = [
-                'content' => $filtered_content, 
+                'content' => $filtered_content,
                 'enqueues' => $block_names,
             ];
 
             // Set Object Cache
             $_cached_key = \VIP_PostContent_Cache\Cache\key( $post_id );
             \wp_cache_set( $_cached_key . '_enqueues',
-                \maybe_serialize( $block_names ), 
-                \VIP_PostContent_Cache\CACHE_GROUP, 
+                \maybe_serialize( $block_names ),
+                \VIP_PostContent_Cache\CACHE_GROUP,
                 HOUR_IN_SECONDS );
             \wp_cache_set( $_cached_key . '_content',
-                $filtered_content, 
-                \VIP_PostContent_Cache\CACHE_GROUP, 
+                $filtered_content,
+                \VIP_PostContent_Cache\CACHE_GROUP,
                 HOUR_IN_SECONDS );
         }
     }
@@ -203,7 +203,7 @@ namespace VIP_PostContent_Cache\Cache {
      * @return string Cached or original content.
      */
     function load( string $content ): string {
-        if ( \is_admin() || \wp_doing_ajax() || \wp_is_json_request() 
+        if ( \is_admin() || \wp_doing_ajax() || \wp_is_json_request()
 			|| !\is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) {
             return $content;
         }
@@ -246,7 +246,7 @@ namespace VIP_PostContent_Cache\Misc {
         $names = [];
 
         foreach ( $blocks as $block ) {
-            if ( ! empty( $block['blockName'] ) && 
+            if ( ! empty( $block['blockName'] ) &&
             !\VIP_PostContent_Cache\Allow\bypass( $block['blockName'] ) ) {
                 $names[] = $block['blockName'];
             }
@@ -335,14 +335,14 @@ namespace VIP_PostContent_Cache\Misc {
             $tmp_block_enqueues = get_block_assets( $block_name );
 
             if ( ! empty( $tmp_block_enqueues['script'] ) ) {
-                $enqueue_scripts = array_merge( 
-                    (array) $enqueue_scripts, 
+                $enqueue_scripts = array_merge(
+                    (array) $enqueue_scripts,
                     (array) $tmp_block_enqueues['script']
                 );
             }
             if ( ! empty( $tmp_block_enqueues['style'] ) ) {
                 $enqueue_styles = array_merge(
-                    (array) $enqueue_styles, 
+                    (array) $enqueue_styles,
                     (array) $tmp_block_enqueues['style']
                 );
 
@@ -397,9 +397,9 @@ namespace VIP_PostContent_Cache\Admin {
      * Registers admin-side hooks to manage cache invalidation on post save or trash.
      */
     function register() {
-		\add_action( 'save_post', 
+		\add_action( 'save_post',
 			'\VIP_PostContent_Cache\Admin\on_save_post', 10, 2 );
-		\add_action( 'wp_trash_post', 
+		\add_action( 'wp_trash_post',
 			'\VIP_PostContent_Cache\Admin\on_trash_post', 10, 1 );
     }
 
