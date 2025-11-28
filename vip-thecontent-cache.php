@@ -231,6 +231,19 @@ namespace VIP_PostContent_Cache\Cache {
         return '_vip_thecontent_' . $post_id;
     }
 
+    function delete( int $post_id ): void {
+        // Just delete the transients...
+		$_cached_key = key( $post_id );
+		\wp_cache_delete( $_cached_key . '_enqueues',
+			\VIP_PostContent_Cache\CACHE_GROUP );
+		\wp_cache_delete( $_cached_key . '_content',
+			\VIP_PostContent_Cache\CACHE_GROUP );
+
+        // but also clear the local memory just in case
+        $mem =& _local_store();
+        unset( $mem[ $post_id ] );
+    }
+
 }
 
 // Assistant functions
@@ -409,12 +422,7 @@ namespace VIP_PostContent_Cache\Admin {
      * @param int $post_id
      */
 	function on_trash_post( $post_id ) {
-		// Just delete the transients...
-		$_cached_key = \VIP_PostContent_Cache\Cache\key( $post_id );
-		\wp_cache_delete( $_cached_key . '_enqueues',
-			\VIP_PostContent_Cache\CACHE_GROUP );
-		\wp_cache_delete( $_cached_key . '_content',
-			\VIP_PostContent_Cache\CACHE_GROUP );
+		\VIP_PostContent_Cache\Cache\delete( $post_id );
 	}
 
     /**
