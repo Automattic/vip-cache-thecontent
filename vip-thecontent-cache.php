@@ -46,6 +46,11 @@ namespace VIP_PostContent_Cache\Hooks {
 
         \add_action( 'vip_thecontentcache_schedule_set',
             '\VIP_PostContent_Cache\Cache\set', 10 );
+
+        \add_action( 'enqueue_block_assets',
+            __NAMESPACE__ . '\\maybe_optimize_block_asset_enqueues',
+        1
+    );
     }
 
     /**
@@ -89,6 +94,57 @@ namespace VIP_PostContent_Cache\Hooks {
         }
 
         return $pre_render;
+    }
+
+    /**
+     * Optimizes front-end block asset loading on cache hits.
+     *
+     * When a singular post has a valid cached entry, this function disables
+     * WordPress’s default block-asset presence scanning
+     * (`wp_enqueue_registered_block_scripts_and_styles`) to avoid repeated
+     * `parse_blocks()` work on every request. Instead, it enqueues styles and
+     * scripts based solely on the block list stored during cache generation.
+     *
+     * Behavior:
+     * - On cache HIT:
+     *     • Removes the core presence-based enqueue callback.
+     *     • Enqueues only the previously recorded block assets.
+     *
+     * - On cache MISS:
+     *     • Core block asset detection runs normally.
+     *
+     * Notes:
+     * - Bypassed blocks are unaffected; they continue to render live and must
+     *   self-enqueue any assets they require.
+     * - This optimization reduces CPU overhead on high-traffic sites by
+     *   eliminating redundant block parsing during `enqueue_block_assets`.
+     *
+     * Hook:
+     * - Runs early on `enqueue_block_assets` so that default callbacks can be
+     *   cleanly removed before they execute.
+     *
+     * @return void
+     */
+    function maybe_optimize_block_asset_enqueues() {
+        if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
+
+        global $post;
+        if ( ! ( $post instanceof \WP_Post ) ) return;
+
+        $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
+        if ( empty( $cached['content'] ) || empty( $cached['enqueues'] ) ) {
+            // No cache hit – let core do its normal presence-based scan
+            return;
+        }
+
+        // 1) Disable core's auto-enqueue of block.json assets for this request
+        \remove_action(
+            'enqueue_block_assets',
+            'wp_enqueue_registered_block_scripts_and_styles'
+        );
+
+        // 2) Enqueue assets based on our stored block list
+        \VIP_PostContent_Cache\Misc\enqueue_block_assets( $cached['enqueues'] );
     }
 
 }
