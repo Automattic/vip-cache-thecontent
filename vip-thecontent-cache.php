@@ -125,9 +125,21 @@ namespace VIP_PostContent_Cache\Cache {
         $the_post = \get_post( $post_id );
         if ( ! ( $the_post instanceof \WP_Post ) ) return;
 
+        // If there are no blocks at all, ensure any old cache is removed
+        if ( ! has_blocks( $the_post ) ) {
+            delete( $post_id );
+            return;
+        }
+
         // Process blocks
         $blocks      = \parse_blocks( $the_post->post_content );
         $block_names = \VIP_PostContent_Cache\Misc\collect_block_names( $blocks );
+
+        // If there are no cacheable blocks, ensure any old cache is removed
+        if ( empty( $block_names ) ) {
+            delete( $post_id );
+            return;
+        }
 
         // Filter the necessary blocks and prepare content for caching
         \add_filter( 'pre_render_block', '\VIP_PostContent_Cache\Hooks\pre_render_block_filter', 10, 2 );
@@ -438,7 +450,6 @@ namespace VIP_PostContent_Cache\Admin {
         if ( ! \wp_next_scheduled( 'vip_thecontentcache_schedule_set', [ $post_id ] ) ) {
             wp_schedule_single_event( time() + 10, 'vip_thecontentcache_schedule_set', [ $post_id ] );
         }
-
 	}
 
 }
