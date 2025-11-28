@@ -38,3 +38,23 @@ function vip_cache_thecontent_add_posttype( array $list ) {
     ] );
 }
 ```
+
+# Background Cache Regeneration (Optional)
+
+A settings checkbox is available under:
+
+Settings → Reading → “[VIP] TheContent Cache”
+
+When enabled, the plugin will refresh cached Gutenberg block output in the background after post updates. This avoids forcing frontend users to trigger regeneration on the next page view.
+
+## :warning: Requirement: Action Scheduler
+
+Background regeneration requires the Action Scheduler library to be present:
+https://actionscheduler.org/
+
+If Action Scheduler is not available:
+1. The checkbox will not be shown.
+2. The option will be automatically disabled.
+3. Cached entries will be cleared immediately on post save, falling back to standard regeneration on the next frontend request.
+
+This ensures consistent behavior regardless of environment support.
