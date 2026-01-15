@@ -39,6 +39,34 @@ namespace VIP_PostContent_Cache\Hooks {
 
         \add_action( 'template_redirect',
             __NAMESPACE__ . '\\ensure_post_content_loaded', 992 );
+
+        // Restore cached Style Engine CSS early (before wp_head finishes)
+        \add_action( 'wp_enqueue_scripts',
+            __NAMESPACE__ . '\\restore_cached_style_engine_css', 100 );
+    }
+
+    /**
+     * Restores cached Style Engine CSS on cache hit.
+     * Runs on wp_enqueue_scripts to ensure CSS appears in <head>.
+     */
+    function restore_cached_style_engine_css() {
+        if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
+
+        global $post;
+        if ( ! ( $post instanceof \WP_Post ) ) return;
+
+        // Only restore if loading from object cache (not just generated this request)
+        $mem =& \VIP_PostContent_Cache\Cache\_local_store();
+        if ( isset( $mem[ $post->ID ] ) ) return; // Generated this request, Style Engine handles it
+
+        $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
+        if ( empty( $cached['style_engine_css'] ) ) return;
+
+        // Output Style Engine CSS via wp_head
+        $css = $cached['style_engine_css'];
+        \add_action( 'wp_head', function() use ( $css ) {
+            echo "<style id='vip-cached-block-supports'>$css</style>\n";
+        }, 999 );
     }
 
     /**
@@ -194,6 +222,9 @@ namespace VIP_PostContent_Cache\Cache {
         // disconnect filters
         \remove_filter( 'pre_render_block', '\VIP_PostContent_Cache\Hooks\pre_render_block_filter', 10, 2 );
 
+        // Capture Style Engine CSS (wp-elements-* classes, block supports)
+        $style_engine_css = \VIP_PostContent_Cache\Misc\capture_style_engine_css();
+
         // Cache block list and content, if applicable
         if ( ! empty( $block_names ) ) {
 
@@ -208,6 +239,7 @@ namespace VIP_PostContent_Cache\Cache {
             $mem[ $post_id ] = [
                 'content' => $filtered_content,
                 'enqueues' => $block_names,
+                'style_engine_css' => $style_engine_css,
             ];
 
             // Set Object Cache
@@ -218,6 +250,10 @@ namespace VIP_PostContent_Cache\Cache {
                 HOUR_IN_SECONDS );
             \wp_cache_set( $_cached_key . '_content',
                 $filtered_content,
+                \VIP_PostContent_Cache\CACHE_GROUP,
+                HOUR_IN_SECONDS );
+            \wp_cache_set( $_cached_key . '_style_engine_css',
+                $style_engine_css,
                 \VIP_PostContent_Cache\CACHE_GROUP,
                 HOUR_IN_SECONDS );
         }
@@ -246,9 +282,14 @@ namespace VIP_PostContent_Cache\Cache {
         $_enqueues  = \maybe_unserialize( \wp_cache_get( $_cached_key . '_enqueues', \VIP_PostContent_Cache\CACHE_GROUP ) );
         if ( false === $_enqueues ) return null;
 
+        // Style Engine CSS (optional - may not exist in older cache entries)
+        $_style_engine_css = \wp_cache_get( $_cached_key . '_style_engine_css', \VIP_PostContent_Cache\CACHE_GROUP );
+        $_style_engine_css = ( false !== $_style_engine_css ) ? $_style_engine_css : '';
+
         return [
             'content' => $_cached_result,
             'enqueues' => $_enqueues,
+            'style_engine_css' => $_style_engine_css,
         ];
     }
 
@@ -293,6 +334,8 @@ namespace VIP_PostContent_Cache\Cache {
 		\wp_cache_delete( $_cached_key . '_enqueues',
 			\VIP_PostContent_Cache\CACHE_GROUP );
 		\wp_cache_delete( $_cached_key . '_content',
+			\VIP_PostContent_Cache\CACHE_GROUP );
+		\wp_cache_delete( $_cached_key . '_style_engine_css',
 			\VIP_PostContent_Cache\CACHE_GROUP );
 
         // but also clear the local memory just in case
@@ -429,6 +472,33 @@ namespace VIP_PostContent_Cache\Misc {
             $enqueue_scripts = \array_unique( $enqueue_scripts );
             \wp_scripts()->enqueue( $enqueue_scripts );
         }
+    }
+
+    /**
+     * Captures CSS from WordPress Style Engine stores.
+     *
+     * The Style Engine (WP 6.1+) stores CSS for block supports like element colors
+     * (wp-elements-* classes) separately from wp_styles. This function extracts
+     * that CSS after block rendering so it can be cached and restored.
+     *
+     * @return string Compiled CSS from all Style Engine stores.
+     */
+    function capture_style_engine_css(): string {
+        if ( ! class_exists( 'WP_Style_Engine_CSS_Rules_Store' ) ) {
+            return '';
+        }
+
+        $all_css = '';
+        $stores = \WP_Style_Engine_CSS_Rules_Store::get_stores();
+
+        foreach ( array_keys( $stores ) as $store_name ) {
+            $css = \wp_style_engine_get_stylesheet_from_context( $store_name );
+            if ( ! empty( $css ) ) {
+                $all_css .= $css . "\n";
+            }
+        }
+
+        return $all_css;
     }
 
 }
