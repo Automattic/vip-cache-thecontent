@@ -14,7 +14,7 @@
  */
 
 // Main
-namespace VIP_PostContent_Cache {
+namespace VIP_CacheTheContent_Plugin {
 
     const CACHE_GROUP      = 'VIP';
     const CACHE_TTL        = \HOUR_IN_SECONDS;
@@ -23,14 +23,13 @@ namespace VIP_PostContent_Cache {
     require_once __DIR__ . '/includes/tools.php';
     require_once __DIR__ . '/includes/cache.php';
     require_once __DIR__ . '/includes/hooks.php';
-    require_once __DIR__ . '/includes/deprecated.php';
     require_once __DIR__ . '/admin/admin.php';
 
     add_action( 'init', function() {
-        // Front-End ( Non-Admin ) actions
-        if ( \is_admin() || \wp_doing_ajax() || \wp_is_json_request() ) return;
+        // Content request actions.
+        if ( \VIP_CacheTheContent_Plugin\Tools\is_not_content_request() ) return;
 
-        \VIP_PostContent_Cache\Hooks\register();
+        \VIP_CacheTheContent_Plugin\Hooks\register();
     });
 
 }

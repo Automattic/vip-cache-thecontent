@@ -2,10 +2,10 @@
 /**
  * Shared helper and capability-check functions.
  *
- * @package VIP_PostContent_Cache
+ * @package VIP_CacheTheContent_Plugin
  */
 
-namespace VIP_PostContent_Cache\Tools {
+namespace VIP_CacheTheContent_Plugin\Tools {
 
     /**
      * Recursively collects block names from a block tree, excluding bypassed blocks.
@@ -18,7 +18,7 @@ namespace VIP_PostContent_Cache\Tools {
 
         foreach ( $blocks as $block ) {
             if ( ! empty( $block['blockName'] ) &&
-            !\VIP_PostContent_Cache\Tools\has_block_bypass( $block['blockName'] ) ) {
+            !\VIP_CacheTheContent_Plugin\Hooks\has_block_bypass( $block['blockName'] ) ) {
                 $names[] = $block['blockName'];
             }
             if ( ! empty( $block['innerBlocks'] ) ) {
@@ -161,25 +161,13 @@ namespace VIP_PostContent_Cache\Tools {
     }
 
     /**
-     * Determines whether a block should be bypassed from caching.
-     * Uses `vip_thecontentcache_bypass` filter.
+     * Determines whether this request should not run content-cache behavior.
      *
-     * @param string $block_name
      * @return bool
      */
-    function has_block_bypass( $block_name ) {
-		return \apply_filters( 'vip_thecontentcache_bypass', false, $block_name );
+    function is_not_content_request() {
+        return \is_admin() || \wp_doing_ajax() || \wp_is_json_request();
     }
-
-    /**
-     * Returns a list of post types eligible for caching.
-     * Uses `vip_thecontentcache_posttypes` filter.
-     *
-     * @return array
-     */
-	function get_posttypes() {
-		return \apply_filters( 'vip_thecontentcache_posttypes', [ 'post', 'page' ] );
-	}
 
     /**
      * Determines whether Action Scheduler is available for use.

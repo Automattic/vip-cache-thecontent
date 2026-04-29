@@ -2,10 +2,10 @@
 /**
  * Content cache helpers.
  *
- * @package VIP_PostContent_Cache
+ * @package VIP_CacheTheContent_Plugin
  */
 
-namespace VIP_PostContent_Cache\Cache {
+namespace VIP_CacheTheContent_Plugin\Cache {
 
     /**
      * Returns a reference to a per-request in-memory store.
@@ -24,7 +24,8 @@ namespace VIP_PostContent_Cache\Cache {
      * @return array Reference to the per-request memoization array.
      */
     function &_local_store(): array {
-        static $mem = []; return $mem;
+        static $mem = [];
+        return $mem;
     }
 
     /**
@@ -44,7 +45,7 @@ namespace VIP_PostContent_Cache\Cache {
 
         // Process blocks
         $blocks      = \parse_blocks( $the_post->post_content );
-        $block_names = \VIP_PostContent_Cache\Tools\collect_block_names( $blocks );
+        $block_names = \VIP_CacheTheContent_Plugin\Tools\collect_block_names( $blocks );
 
         // If there are no cacheable blocks, ensure any old cache is removed
         if ( empty( $block_names ) ) {
@@ -53,23 +54,23 @@ namespace VIP_PostContent_Cache\Cache {
         }
 
         // Filter the necessary blocks and prepare content for caching
-        \add_filter( 'pre_render_block', '\\VIP_PostContent_Cache\\Hooks\\pre_render_block_filter', 10, 2 );
+        \add_filter( 'pre_render_block', '\\VIP_CacheTheContent_Plugin\\Hooks\\pre_render_block_filter', 10, 2 );
 
         // Process content and blocks
         $filtered_content = \apply_filters( 'the_content', $the_post->post_content );
 
         // disconnect filters
-        \remove_filter( 'pre_render_block', '\\VIP_PostContent_Cache\\Hooks\\pre_render_block_filter', 10, 2 );
+        \remove_filter( 'pre_render_block', '\\VIP_CacheTheContent_Plugin\\Hooks\\pre_render_block_filter', 10, 2 );
 
         // Capture Style Engine CSS (wp-elements-* classes, block supports)
-        $style_engine_css = \VIP_PostContent_Cache\Tools\capture_style_engine_css();
+        $style_engine_css = \VIP_CacheTheContent_Plugin\Tools\capture_style_engine_css();
 
         // Cache block list and content, if applicable
         if ( ! empty( $block_names ) ) {
 
             // Filter out blocks that might not have either scripts or styles
             foreach( $block_names as $index => $tmp_block_name ) {
-                $tmp = (array) \VIP_PostContent_Cache\Tools\get_block_assets( $tmp_block_name );
+                $tmp = (array) \VIP_CacheTheContent_Plugin\Tools\get_block_assets( $tmp_block_name );
                 if ( empty( $tmp['style'] ) && empty( $tmp['script'] ) ) unset( $block_names[ $index ] );
             }
 
@@ -82,19 +83,19 @@ namespace VIP_PostContent_Cache\Cache {
             ];
 
             // Set Object Cache
-            $_cached_key = \VIP_PostContent_Cache\Cache\key( $post_id );
+            $_cached_key = \VIP_CacheTheContent_Plugin\Cache\key( $post_id );
             \wp_cache_set( $_cached_key . '_enqueues',
                 \maybe_serialize( $block_names ),
-                \VIP_PostContent_Cache\CACHE_GROUP,
-                \VIP_PostContent_Cache\CACHE_TTL );
+                \VIP_CacheTheContent_Plugin\CACHE_GROUP,
+                \VIP_CacheTheContent_Plugin\CACHE_TTL );
             \wp_cache_set( $_cached_key . '_content',
                 $filtered_content,
-                \VIP_PostContent_Cache\CACHE_GROUP,
-                \VIP_PostContent_Cache\CACHE_TTL );
+                \VIP_CacheTheContent_Plugin\CACHE_GROUP,
+                \VIP_CacheTheContent_Plugin\CACHE_TTL );
             \wp_cache_set( $_cached_key . '_style_engine_css',
                 $style_engine_css,
-                \VIP_PostContent_Cache\CACHE_GROUP,
-                \VIP_PostContent_Cache\CACHE_TTL );
+                \VIP_CacheTheContent_Plugin\CACHE_GROUP,
+                \VIP_CacheTheContent_Plugin\CACHE_TTL );
         }
     }
 
@@ -111,18 +112,18 @@ namespace VIP_PostContent_Cache\Cache {
         if ( isset( $mem[ $post_id ] ) ) return $mem[ $post_id ];
 
         // Get from Object Cache
-        $_cached_key    = \VIP_PostContent_Cache\Cache\key( $post_id );
+        $_cached_key    = \VIP_CacheTheContent_Plugin\Cache\key( $post_id );
 
         // Content Object Cache
-        $_cached_result = \wp_cache_get( $_cached_key . '_content', \VIP_PostContent_Cache\CACHE_GROUP );
+        $_cached_result = \wp_cache_get( $_cached_key . '_content', \VIP_CacheTheContent_Plugin\CACHE_GROUP );
         if ( false === $_cached_result ) return null;
 
         // Enqueue Object Cache
-        $_enqueues  = \maybe_unserialize( \wp_cache_get( $_cached_key . '_enqueues', \VIP_PostContent_Cache\CACHE_GROUP ) );
+        $_enqueues  = \maybe_unserialize( \wp_cache_get( $_cached_key . '_enqueues', \VIP_CacheTheContent_Plugin\CACHE_GROUP ) );
         if ( false === $_enqueues ) return null;
 
         // Style Engine CSS (optional - may not exist in older cache entries)
-        $_style_engine_css = \wp_cache_get( $_cached_key . '_style_engine_css', \VIP_PostContent_Cache\CACHE_GROUP );
+        $_style_engine_css = \wp_cache_get( $_cached_key . '_style_engine_css', \VIP_CacheTheContent_Plugin\CACHE_GROUP );
         $_style_engine_css = ( false !== $_style_engine_css ) ? $_style_engine_css : '';
 
         return [
@@ -139,18 +140,18 @@ namespace VIP_PostContent_Cache\Cache {
      * @return string Cached or original content.
      */
     function load( string $content ): string {
-        if ( \is_admin() || \wp_doing_ajax() || \wp_is_json_request()
-			|| !\is_singular( \VIP_PostContent_Cache\Tools\get_posttypes() ) ) {
+        if ( \VIP_CacheTheContent_Plugin\Tools\is_not_content_request()
+			|| ! \is_singular( \VIP_CacheTheContent_Plugin\Hooks\get_posttypes() ) ) {
             return $content;
         }
 
         global $post;
         if ( ! ( $post instanceof \WP_Post ) ) return $content;
 
-        $_cached_result = \VIP_PostContent_Cache\Cache\get( $post->ID );
+        $_cached_result = \VIP_CacheTheContent_Plugin\Cache\get( $post->ID );
 
         if ( ! empty( $_cached_result['enqueues'] ) && ! empty( $_cached_result['content'] ) ) {
-            \VIP_PostContent_Cache\Tools\enqueue_block_assets( $_cached_result['enqueues'] );
+            \VIP_CacheTheContent_Plugin\Tools\enqueue_block_assets( $_cached_result['enqueues'] );
             return $_cached_result['content'];
         }
 
@@ -164,18 +165,18 @@ namespace VIP_PostContent_Cache\Cache {
      * @return string
      */
     function key( int $post_id ): string {
-        return \VIP_PostContent_Cache\CACHE_KEY_PREFIX . $post_id;
+        return \VIP_CacheTheContent_Plugin\CACHE_KEY_PREFIX . $post_id;
     }
 
     function delete( int $post_id ): void {
         // Just delete the transients...
 		$_cached_key = key( $post_id );
 		\wp_cache_delete( $_cached_key . '_enqueues',
-			\VIP_PostContent_Cache\CACHE_GROUP );
+			\VIP_CacheTheContent_Plugin\CACHE_GROUP );
 		\wp_cache_delete( $_cached_key . '_content',
-			\VIP_PostContent_Cache\CACHE_GROUP );
+			\VIP_CacheTheContent_Plugin\CACHE_GROUP );
 		\wp_cache_delete( $_cached_key . '_style_engine_css',
-			\VIP_PostContent_Cache\CACHE_GROUP );
+			\VIP_CacheTheContent_Plugin\CACHE_GROUP );
 
         // but also clear the local memory just in case
         $mem =& _local_store();
