@@ -9,6 +9,7 @@ namespace VIP_CacheTheContent_Plugin\Admin;
 
 const CACHE_REFRESH_ENABLE_OPTION = 'vip_cachethecontent_cron_regenerate';
 const CACHE_REFRESH_CRON_NAME     = 'vip_cachethecontent_schedule_set';
+const LANGUAGE_DOMAIN             = 'vip_cachethecontent_domain';
 
 \add_action( 'admin_init', '\VIP_CacheTheContent_Plugin\Admin\ui_register_enable_option' );
 \add_action( 'admin_init', '\VIP_CacheTheContent_Plugin\Admin\register' );
@@ -59,13 +60,13 @@ function ui_register_enable_option() {
     // Add Settings field
     \add_settings_field(
         \VIP_CacheTheContent_Plugin\Admin\CACHE_REFRESH_ENABLE_OPTION,
-        __( '[VIP] Cache TheContent', 'vip_cachethecontent_hardrefresh' ),
+        __( '[VIP] Cache TheContent', \VIP_CacheTheContent_Plugin\Admin\LANGUAGE_DOMAIN ),
         function() {
             $enabled = (bool) \get_option( \VIP_CacheTheContent_Plugin\Admin\CACHE_REFRESH_ENABLE_OPTION, false );
             ?>
             <label>
                 <input type="checkbox" name="<?php echo \esc_attr( \VIP_CacheTheContent_Plugin\Admin\CACHE_REFRESH_ENABLE_OPTION ); ?>" value="1" <?php \checked( $enabled ); ?>>
-                <?php \esc_html_e( 'Update cached Gutenberg blocks on post-type update.', 'vip_cachethecontent_hardrefresh' ); ?>
+                <?php \esc_html_e( 'Update cached Gutenberg blocks on post-type update.', \VIP_CacheTheContent_Plugin\Admin\LANGUAGE_DOMAIN ); ?>
             </label>
             <?php
         },
