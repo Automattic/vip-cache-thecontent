@@ -110,7 +110,7 @@ function on_trash_post( $post_id ) {
  * @return void
  */
 function on_save_post( $post_id, $post ) {
-    if ( ! in_array( $post->post_type, \VIP_CacheTheContent_Plugin\Hooks\get_posttypes(), true ) ) return;
+    if ( ! in_array( $post->post_type, \VIP_CacheTheContent_Plugin\Tools\get_posttypes(), true ) ) return;
     if ( \wp_is_post_autosave( $post_id ) || \wp_is_post_revision( $post_id ) ) return;
 
     // --- Handle scheduling or unscheduling ---

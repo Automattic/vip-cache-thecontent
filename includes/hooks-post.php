@@ -5,7 +5,7 @@
  * @package VIP_CacheTheContent_Plugin
  */
 
-namespace VIP_CacheTheContent_Plugin\Hooks;
+namespace VIP_CacheTheContent_Plugin\Hooks\Post;
 
 /**
  * Registers front-end hooks for caching and loading post content during template rendering.
@@ -23,11 +23,20 @@ function register() {
 }
 
 /**
+ * Determines whether the current request should not use post content caching hooks.
+ *
+ * @return bool Whether the current request is not an eligible singular post request.
+ */
+function is_not_active() {
+    return ! \is_singular( \VIP_CacheTheContent_Plugin\Tools\get_posttypes() );
+}
+
+/**
  * Restores cached Style Engine CSS on cache hit.
  * Runs on wp_enqueue_scripts to ensure CSS appears in <head>.
  */
 function restore_cached_style_engine_css() {
-    if ( ! \is_singular( get_posttypes() ) ) return;
+    if ( is_not_active() ) return;
 
     global $post;
     if ( ! ( $post instanceof \WP_Post ) ) return;
@@ -50,7 +59,7 @@ function restore_cached_style_engine_css() {
  * Ensures the current post's content is cached, if it matches allowed post types and is not already cached.
  */
 function maybe_cache_post_content() {
-    if ( ! \is_singular( get_posttypes() ) ) return;
+    if ( is_not_active() ) return;
 
     global $post;
     if ( ! ( $post instanceof \WP_Post ) ) return;
@@ -64,29 +73,9 @@ function maybe_cache_post_content() {
  * Attaches the content-loading filter to `the_content` to replace it with cached output and enqueue assets.
  */
 function register_content_loader() {
-    if ( ! \is_singular( get_posttypes() ) ) return;
+    if ( is_not_active() ) return;
 
     \add_filter( 'the_content', '\\VIP_CacheTheContent_Plugin\\Cache\\load', 1, 1 );
-}
-
-/**
- * Filters block pre-rendering during caching. If a block is bypassed,
- * return its serialized source so it stays dynamic at view time.
- *
- * @param string|null  $pre_render Pre-render value (null to continue normal rendering).
- * @param array        $block      Parsed block array.
- * @return string|null Serialized source or null to continue.
- */
-function pre_render_block_filter( $pre_render, $block ) {
-    $name = $block['blockName'] ?? null;
-
-    if ( $name && has_block_bypass( $name ) ) {
-        // Return raw block source (with <!-- wp:... -->) so it stays in the cache,
-        // and will be rendered on each request.
-        return \serialize_block( $block );
-    }
-
-    return $pre_render;
 }
 
 /**
@@ -119,7 +108,7 @@ function pre_render_block_filter( $pre_render, $block ) {
  * @return void
  */
 function maybe_optimize_block_asset_enqueues() {
-    if ( ! \is_singular( get_posttypes() ) ) return;
+    if ( is_not_active() ) return;
 
     global $post;
     if ( ! ( $post instanceof \WP_Post ) ) return;
@@ -138,27 +127,4 @@ function maybe_optimize_block_asset_enqueues() {
 
     // 2) Enqueue assets based on our stored block list
     \VIP_CacheTheContent_Plugin\Tools\enqueue_block_assets( $cached['enqueues'] );
-}
-
-    /**
- * Determines whether a block should be bypassed from caching.
- * Uses `vip_cachethecontent_bypass` filter.
- *
- * @param string $block_name
- * @return bool
- */
-function has_block_bypass( $block_name ) {
-    $bypass = \apply_filters( 'vip_cachethecontent_bypass', false, $block_name );
-    return $bypass;
-}
-
-/**
- * Returns a list of post types eligible for caching.
- * Uses `vip_cachethecontent_posttypes` filter.
- *
- * @return array
- */
-function get_posttypes() {
-    $posttypes = \apply_filters( 'vip_cachethecontent_posttypes', [ 'post', 'page' ] );
-    return $posttypes;
 }

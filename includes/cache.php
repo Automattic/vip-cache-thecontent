@@ -54,13 +54,13 @@ function set( int $post_id ): void {
     }
 
     // Filter the necessary blocks and prepare content for caching
-    \add_filter( 'pre_render_block', '\\VIP_CacheTheContent_Plugin\\Hooks\\pre_render_block_filter', 10, 2 );
+    \add_filter( 'pre_render_block', '\\VIP_CacheTheContent_Plugin\\Tools\\pre_render_block_filter', 10, 2 );
 
     // Process content and blocks
     $filtered_content = \apply_filters( 'the_content', $the_post->post_content );
 
     // disconnect filters
-    \remove_filter( 'pre_render_block', '\\VIP_CacheTheContent_Plugin\\Hooks\\pre_render_block_filter', 10, 2 );
+    \remove_filter( 'pre_render_block', '\\VIP_CacheTheContent_Plugin\\Tools\\pre_render_block_filter', 10, 2 );
 
     // Capture Style Engine CSS (wp-elements-* classes, block supports)
     $style_engine_css = \VIP_CacheTheContent_Plugin\Tools\capture_style_engine_css();
@@ -141,7 +141,7 @@ function get( int $post_id ): ?array {
  */
 function load( string $content ): string {
     if ( \VIP_CacheTheContent_Plugin\Tools\is_not_content_request()
-        || ! \is_singular( \VIP_CacheTheContent_Plugin\Hooks\get_posttypes() ) ) {
+        || ! \is_singular( \VIP_CacheTheContent_Plugin\Tools\get_posttypes() ) ) {
         return $content;
     }
 

@@ -18,7 +18,7 @@ function collect_block_names( array $blocks ) {
 
     foreach ( $blocks as $block ) {
         if ( ! empty( $block['blockName'] ) &&
-        !\VIP_CacheTheContent_Plugin\Hooks\has_block_bypass( $block['blockName'] ) ) {
+        ! has_block_bypass( $block['blockName'] ) ) {
             $names[] = $block['blockName'];
         }
         if ( ! empty( $block['innerBlocks'] ) ) {
@@ -158,6 +158,49 @@ function capture_style_engine_css(): string {
     }
 
     return $all_css;
+}
+
+/**
+ * Filters block pre-rendering during caching. If a block is bypassed,
+ * return its serialized source so it stays dynamic at view time.
+ *
+ * @param string|null  $pre_render Pre-render value (null to continue normal rendering).
+ * @param array        $block      Parsed block array.
+ * @return string|null Serialized source or null to continue.
+ */
+function pre_render_block_filter( $pre_render, $block ) {
+    $name = $block['blockName'] ?? null;
+
+    if ( $name && has_block_bypass( $name ) ) {
+        // Return raw block source (with <!-- wp:... -->) so it stays in the cache,
+        // and will be rendered on each request.
+        return \serialize_block( $block );
+    }
+
+    return $pre_render;
+}
+
+/**
+ * Determines whether a block should be bypassed from caching.
+ * Uses `vip_cachethecontent_bypass` filter.
+ *
+ * @param string $block_name
+ * @return bool
+ */
+function has_block_bypass( $block_name ) {
+    $bypass = \apply_filters( 'vip_cachethecontent_bypass', false, $block_name );
+    return $bypass;
+}
+
+/**
+ * Returns a list of post types eligible for caching.
+ * Uses `vip_cachethecontent_posttypes` filter.
+ *
+ * @return array
+ */
+function get_posttypes() {
+    $posttypes = \apply_filters( 'vip_cachethecontent_posttypes', [ 'post', 'page' ] );
+    return $posttypes;
 }
 
 /**
