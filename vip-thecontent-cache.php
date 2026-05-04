@@ -43,6 +43,9 @@ namespace VIP_PostContent_Cache\Hooks {
         // Restore cached Style Engine CSS early (before wp_head finishes)
         \add_action( 'wp_enqueue_scripts',
             __NAMESPACE__ . '\\restore_cached_style_engine_css', 100 );
+
+        \add_action( 'enqueue_block_assets',
+            __NAMESPACE__ . '\\maybe_optimize_block_asset_enqueues', 1);
     }
 
     /**
@@ -65,7 +68,10 @@ namespace VIP_PostContent_Cache\Hooks {
         // Output Style Engine CSS via wp_head
         $css = $cached['style_engine_css'];
         \add_action( 'wp_head', function() use ( $css ) {
-            echo "<style id='vip-cached-block-supports'>$css</style>\n";
+            echo '<style id="vip-cached-block-supports">' . 
+                wp_strip_all_tags ( $css ) . 
+                '</style>' . 
+                PHP_EOL;
         }, 999 );
     }
 
@@ -234,26 +240,22 @@ namespace VIP_PostContent_Cache\Cache {
                 if ( empty( $tmp['style'] ) && empty( $tmp['script'] ) ) unset( $block_names[ $index ] );
             }
 
-            // Set Local Cache
-            $mem =& _local_store();
-            $mem[ $post_id ] = [
+            $_cached_result = [
                 'content' => $filtered_content,
                 'enqueues' => $block_names,
                 'style_engine_css' => $style_engine_css,
             ];
 
+            // Set Local Cache
+            $mem =& _local_store();
+            $mem[ $post_id ] = $_cached_result;
+
+            // @TODO: Check if the store is too big -> error instead of caching
+
             // Set Object Cache
             $_cached_key = \VIP_PostContent_Cache\Cache\key( $post_id );
-            \wp_cache_set( $_cached_key . '_enqueues',
-                \maybe_serialize( $block_names ),
-                \VIP_PostContent_Cache\CACHE_GROUP,
-                HOUR_IN_SECONDS );
-            \wp_cache_set( $_cached_key . '_content',
-                $filtered_content,
-                \VIP_PostContent_Cache\CACHE_GROUP,
-                HOUR_IN_SECONDS );
-            \wp_cache_set( $_cached_key . '_style_engine_css',
-                $style_engine_css,
+            \wp_cache_set( $_cached_key,
+                $_cached_result,
                 \VIP_PostContent_Cache\CACHE_GROUP,
                 HOUR_IN_SECONDS );
         }
@@ -274,23 +276,11 @@ namespace VIP_PostContent_Cache\Cache {
         // Get from Object Cache
         $_cached_key    = \VIP_PostContent_Cache\Cache\key( $post_id );
 
-        // Content Object Cache
-        $_cached_result = \wp_cache_get( $_cached_key . '_content', \VIP_PostContent_Cache\CACHE_GROUP );
+        // Object Cache
+        $_cached_result = \wp_cache_get( $_cached_key, \VIP_PostContent_Cache\CACHE_GROUP );
+
         if ( false === $_cached_result ) return null;
-
-        // Enqueue Object Cache
-        $_enqueues  = \maybe_unserialize( \wp_cache_get( $_cached_key . '_enqueues', \VIP_PostContent_Cache\CACHE_GROUP ) );
-        if ( false === $_enqueues ) return null;
-
-        // Style Engine CSS (optional - may not exist in older cache entries)
-        $_style_engine_css = \wp_cache_get( $_cached_key . '_style_engine_css', \VIP_PostContent_Cache\CACHE_GROUP );
-        $_style_engine_css = ( false !== $_style_engine_css ) ? $_style_engine_css : '';
-
-        return [
-            'content' => $_cached_result,
-            'enqueues' => $_enqueues,
-            'style_engine_css' => $_style_engine_css,
-        ];
+        else return $_cached_result;
     }
 
     /**
@@ -331,12 +321,7 @@ namespace VIP_PostContent_Cache\Cache {
     function delete( int $post_id ): void {
         // Just delete the transients...
 		$_cached_key = key( $post_id );
-		\wp_cache_delete( $_cached_key . '_enqueues',
-			\VIP_PostContent_Cache\CACHE_GROUP );
-		\wp_cache_delete( $_cached_key . '_content',
-			\VIP_PostContent_Cache\CACHE_GROUP );
-		\wp_cache_delete( $_cached_key . '_style_engine_css',
-			\VIP_PostContent_Cache\CACHE_GROUP );
+		\wp_cache_delete( $_cached_key, \VIP_PostContent_Cache\CACHE_GROUP );
 
         // but also clear the local memory just in case
         $mem =& _local_store();
