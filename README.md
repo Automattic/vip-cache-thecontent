@@ -57,4 +57,8 @@ If Action Scheduler is not available:
 2. The option will be automatically disabled.
 3. Cached entries will be cleared immediately on post save, falling back to standard regeneration on the next frontend request.
 
+If Action Scheduler is available but the checkbox is **disabled**:
+1. Any pending background rebuild jobs for the saved post are cancelled.
+2. Cached entries are cleared immediately on post save, same as the no-Action-Scheduler fallback.
+
 This ensures consistent behavior regardless of environment support.

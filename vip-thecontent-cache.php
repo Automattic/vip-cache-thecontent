@@ -237,7 +237,7 @@ namespace VIP_PostContent_Cache\Cache {
             // Filter out blocks that might not have either scripts or styles
             foreach( $block_names as $index => $tmp_block_name ) {
                 $tmp = (array) \VIP_PostContent_Cache\Misc\get_block_assets( $tmp_block_name );
-                if ( empty( $tmp['style'] ) && empty( $tmp['script'] ) ) unset( $block_names[ $index ] );
+                if ( empty( $tmp['style'] ) && empty( $tmp['script'] ) && empty( $tmp['module'] ) ) unset( $block_names[ $index ] );
             }
 
             $_cached_result = [
@@ -361,20 +361,21 @@ namespace VIP_PostContent_Cache\Misc {
      * Collects registered front-end asset handles for a block.
      *
      * Reads the block’s registration (via WP_Block_Type_Registry) and returns a
-     * normalized list of handles for **styles** and **front-end scripts**:
+     * normalized list of handles for **styles**, **front-end scripts**, and **script modules**:
      * - Styles come from `$block_type->style` (string|array).
      * - Scripts prefer `$block_type->view_script` (front-end only), then legacy
      *   `$block_type->script` (editor+front-end in older blocks).
+     * - Modules come from `$block_type->view_script_module_ids` (WP 6.5+, Interactivity API).
      *
      * Editor-only assets (e.g., editor_style/editor_script) are intentionally ignored.
      *
-     * @param string $block_name Block name (e.g., 'core/paragraph').
-     * @return array{style:string[], script:string[]}|null Array of handles, or null if the block is not registered.
+     * @param string $block_name Block name (e.g., ‘core/paragraph’).
+     * @return array{style:string[], script:string[], module:string[]}|null Array of handles, or null if the block is not registered.
      *
      * @note Handles may be registered as a string or an array; this function
      *       normalizes them to arrays and filters out empty values.
      * @example
-     *   // ['style' => ['core-blocks'], 'script' => ['my-frontend-js']]
+     *   // [‘style’ => [‘core-blocks’], ‘script’ => [‘my-frontend-js’], ‘module’ => [‘@wordpress/interactivity’]]
      */
     function get_block_assets( $block_name ) {
         $registry = \WP_Block_Type_Registry::get_instance();
@@ -382,36 +383,43 @@ namespace VIP_PostContent_Cache\Misc {
 
         if ( ! $block_type ) return null;
 
-        $styles_scripts_list = [ 'style' => [], 'script' => [], ];
+        $styles_scripts_list = [ ‘style’ => [], ‘script’ => [], ‘module’ => [] ];
 
         // style can be string or array
         $styles = $block_type->style ?? [];
         foreach ( (array) $styles as $h ) {
-            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['style'][] = $h;
+            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘style’][] = $h;
         }
 
         // prefer view_script for frontend behavior
         $view_scripts = $block_type->view_script ?? [];
         foreach ( (array) $view_scripts as $h ) {
-            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['script'][] = $h;
+            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘script’][] = $h;
         }
 
-        // keep legacy 'script' for blocks that still use it
+        // keep legacy ‘script’ for blocks that still use it
         $scripts = $block_type->script ?? [];
         foreach ( (array) $scripts as $h ) {
-            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['script'][] = $h;
+            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘script’][] = $h;
+        }
+
+        // WP 6.5+: Interactivity API module IDs (viewScriptModule in block.json)
+        $modules = $block_type->view_script_module_ids ?? [];
+        foreach ( (array) $modules as $h ) {
+            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘module’][] = $h;
         }
 
         return $styles_scripts_list;
     }
 
     /**
-     * Enqueues front-end styles and scripts for the given blocks (bulk, de-duplicated).
+     * Enqueues front-end styles, scripts, and script modules for the given blocks (bulk, de-duplicated).
      *
      * For each block name, this gathers handles via get_block_assets() and enqueues
      * them through the global registries:
      * - Styles are enqueued with `wp_styles()->enqueue( $handles )`.
      * - Scripts are enqueued with `wp_scripts()->enqueue( $handles )`.
+     * - Modules (WP 6.5+) are enqueued with `wp_enqueue_script_module( $id )`.
      *
      * Dependency resolution is handled by WordPress, as with individual enqueue calls.
      * Editor-only assets are not enqueued here.
@@ -426,7 +434,7 @@ namespace VIP_PostContent_Cache\Misc {
      */
     function enqueue_block_assets( $blocks_list ) {
         if (empty( $blocks_list ) ) return;
-        $enqueue_styles = $enqueue_scripts = [];
+        $enqueue_styles = $enqueue_scripts = $enqueue_modules = [];
 
         foreach ( $blocks_list as $block_name ) {
             $tmp_block_enqueues = get_block_assets( $block_name );
@@ -442,7 +450,12 @@ namespace VIP_PostContent_Cache\Misc {
                     (array) $enqueue_styles,
                     (array) $tmp_block_enqueues['style']
                 );
-
+            }
+            if ( ! empty( $tmp_block_enqueues['module'] ) ) {
+                $enqueue_modules = array_merge(
+                    (array) $enqueue_modules,
+                    (array) $tmp_block_enqueues['module']
+                );
             }
         }
 
@@ -456,6 +469,13 @@ namespace VIP_PostContent_Cache\Misc {
         if ( ! empty( $enqueue_scripts ) ) {
             $enqueue_scripts = \array_unique( $enqueue_scripts );
             \wp_scripts()->enqueue( $enqueue_scripts );
+        }
+
+        // Handle module enqueues (WP 6.5+ Interactivity API)
+        if ( ! empty( $enqueue_modules ) && \function_exists( 'wp_enqueue_script_module' ) ) {
+            foreach ( \array_unique( $enqueue_modules ) as $module_id ) {
+                \wp_enqueue_script_module( $module_id );
+            }
         }
     }
 
@@ -515,8 +535,8 @@ namespace VIP_PostContent_Cache\Allow {
     /**
      * Determines whether Action Scheduler is available for use.
      *
-     * Checks for the existence of the required core Action Scheduler functions:
-     * - as_schedule_recurring_action()
+     * Checks for the existence of the required Action Scheduler functions:
+     * - as_schedule_single_action()
      * - as_next_scheduled_action()
      * - as_unschedule_all_actions()
      *
@@ -526,7 +546,7 @@ namespace VIP_PostContent_Cache\Allow {
      */
     function is_as() {
         return (
-            \function_exists( 'as_schedule_recurring_action' ) &&
+            \function_exists( 'as_schedule_single_action' ) &&
             \function_exists( 'as_next_scheduled_action' ) &&
             \function_exists( 'as_unschedule_all_actions' )
         );
@@ -629,10 +649,10 @@ namespace VIP_PostContent_Cache\Admin {
      * - Ignores autosaves and revisions.
      * - Only operates on post types allowed by the plugin's allowlist.
      * - If Action Scheduler is unavailable, cache is deleted immediately.
-     * - If enabled via settings, schedules a background cache rebuild
-     *   via Action Scheduler.
-     * - If the option is disabled, any pending scheduled rebuilds for this
-     *   post are unscheduled.
+     * - If enabled via settings, schedules a background cache rebuild via
+     *   Action Scheduler (idempotent: skips scheduling if already queued).
+     * - If the option is disabled, any pending AS actions for this post are
+     *   cancelled and the cache is deleted immediately.
      *
      * @param int     $post_id Post ID.
      * @param WP_Post $post     Post object.
@@ -642,26 +662,27 @@ namespace VIP_PostContent_Cache\Admin {
 		if ( ! in_array( $post->post_type, \VIP_PostContent_Cache\Allow\posttypes(), true ) ) return;
 		if ( \wp_is_post_autosave( $post_id ) || \wp_is_post_revision( $post_id ) ) return;
 
-        // --- Handle scheduling or unscheduling ---
         $option_enabled = (bool) \get_option( \VIP_PostContent_Cache\Admin\CACHE_REFRESH_ENABLE_OPTION, false );
 
         if ( ! \VIP_PostContent_Cache\Allow\is_as() ) {
+            // No Action Scheduler: clear cache now; front-end regenerates on next view.
             \VIP_PostContent_Cache\Cache\delete( $post_id );
-        } else {
-            if ( $option_enabled ) {
-                if ( ! \wp_next_scheduled( \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME, [ $post_id ] ) ) {
-                    \wp_schedule_single_event( time() + 10,
-                        \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME,
-                        [ $post_id ]
-                    );
-                }
-            } else {
-                // Clear any core-cron events for this post
-                \as_unschedule_all_actions(
+        } elseif ( $option_enabled ) {
+            // Schedule a background rebuild via Action Scheduler if not already queued.
+            if ( ! \as_next_scheduled_action( \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME, [ $post_id ] ) ) {
+                \as_schedule_single_action(
+                    time() + 10,
                     \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME,
                     [ $post_id ]
                 );
             }
+        } else {
+            // Option disabled: cancel any pending AS actions and clear the cache now.
+            \as_unschedule_all_actions(
+                \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME,
+                [ $post_id ]
+            );
+            \VIP_PostContent_Cache\Cache\delete( $post_id );
         }
 	}
 
