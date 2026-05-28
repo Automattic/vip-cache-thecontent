@@ -280,7 +280,10 @@ namespace VIP_PostContent_Cache\Cache {
         $_cached_result = \wp_cache_get( $_cached_key, \VIP_PostContent_Cache\CACHE_GROUP );
 
         if ( false === $_cached_result ) return null;
-        else return $_cached_result;
+
+        // Populate local store so subsequent get() calls this request skip the object cache.
+        $mem[ $post_id ] = $_cached_result;
+        return $_cached_result;
     }
 
     /**
