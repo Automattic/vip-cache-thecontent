@@ -49,6 +49,12 @@ Posts that require a password are never cached. The object cache is shared acros
 
 When a password-protected post is requested, the plugin steps aside and lets WordPress present its standard password form and handle content rendering as normal.
 
+## Post Previews
+
+Preview requests are never cached and never serve cached content. A preview may display an unpublished draft or a pending revision — content that differs from what is publicly visible. Because the object cache is shared, caching a preview would expose draft content to regular visitors on the next request.
+
+Note: `is_admin()` does not cover this case. Post previews load on the front-end (the preview URL is not a wp-admin URL), so the plugin explicitly checks `is_preview()` at the point where the query is available.
+
 # Background Cache Regeneration (Optional)
 
 A settings checkbox is available under:

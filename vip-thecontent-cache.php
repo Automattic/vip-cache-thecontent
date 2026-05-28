@@ -87,6 +87,9 @@ namespace VIP_PostContent_Cache\Hooks {
         // Password-protected posts must never be cached: the object cache is not
         // cookie-aware, so cached content would be served to unauthenticated visitors.
         if ( \post_password_required( $post ) ) return;
+        // Preview requests show unpublished content; caching them would expose draft
+        // content to regular visitors via the shared object cache.
+        if ( \is_preview() ) return;
 
         $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
         if ( empty( $cached ) ) \VIP_PostContent_Cache\Cache\set( $post->ID );
@@ -102,6 +105,9 @@ namespace VIP_PostContent_Cache\Hooks {
         // Do not register the load filter for password-protected posts — let WordPress
         // handle them normally so the password form is presented without interference.
         if ( ( $post instanceof \WP_Post ) && \post_password_required( $post ) ) return;
+        // Preview requests must not serve cached content — the previewed version may
+        // differ from what is published.
+        if ( \is_preview() ) return;
 
         \add_filter( 'the_content', '\VIP_PostContent_Cache\Cache\load', 1, 1 );
     }
