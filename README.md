@@ -39,6 +39,16 @@ function vip_cache_thecontent_add_posttype( array $list ) {
 }
 ```
 
+# Special Cases
+
+The following post types are automatically excluded from caching. WordPress handles them through its normal rendering pipeline without any interference from this plugin.
+
+## Password-Protected Posts
+
+Posts that require a password are never cached. The object cache is shared across all visitors and has no awareness of cookies or authentication state. Caching the content of a password-protected post would expose the full block output to unauthenticated visitors, bypassing WordPress's access control entirely.
+
+When a password-protected post is requested, the plugin steps aside and lets WordPress present its standard password form and handle content rendering as normal.
+
 # Background Cache Regeneration (Optional)
 
 A settings checkbox is available under:

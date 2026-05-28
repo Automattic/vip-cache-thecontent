@@ -84,6 +84,9 @@ namespace VIP_PostContent_Cache\Hooks {
         global $post;
 		if ( ! ( $post instanceof \WP_Post ) ) return;
         if ( ! \has_blocks( $post ) ) return;
+        // Password-protected posts must never be cached: the object cache is not
+        // cookie-aware, so cached content would be served to unauthenticated visitors.
+        if ( \post_password_required( $post ) ) return;
 
         $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
         if ( empty( $cached ) ) \VIP_PostContent_Cache\Cache\set( $post->ID );
@@ -94,6 +97,11 @@ namespace VIP_PostContent_Cache\Hooks {
      */
     function ensure_post_content_loaded() {
         if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
+
+        global $post;
+        // Do not register the load filter for password-protected posts — let WordPress
+        // handle them normally so the password form is presented without interference.
+        if ( ( $post instanceof \WP_Post ) && \post_password_required( $post ) ) return;
 
         \add_filter( 'the_content', '\VIP_PostContent_Cache\Cache\load', 1, 1 );
     }
@@ -205,6 +213,13 @@ namespace VIP_PostContent_Cache\Cache {
 
         // If there are no blocks at all, ensure any old cache is removed
         if ( ! has_blocks( $the_post ) ) {
+            delete( $post_id );
+            return;
+        }
+
+        // Safety net: never cache password-protected posts. The object cache is shared
+        // and not cookie-aware, so this content must always be rendered by WordPress directly.
+        if ( \post_password_required( $the_post ) ) {
             delete( $post_id );
             return;
         }
