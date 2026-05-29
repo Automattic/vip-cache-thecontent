@@ -39,13 +39,6 @@ namespace VIP_PostContent_Cache\Hooks {
 
         \add_action( 'template_redirect',
             __NAMESPACE__ . '\\ensure_post_content_loaded', 992 );
-
-        // Restore cached Style Engine CSS early (before wp_head finishes)
-        \add_action( 'wp_enqueue_scripts',
-            __NAMESPACE__ . '\\restore_cached_style_engine_css', 100 );
-
-        \add_action( 'enqueue_block_assets',
-            __NAMESPACE__ . '\\maybe_optimize_block_asset_enqueues', 1);
     }
 
     /**
@@ -81,15 +74,25 @@ namespace VIP_PostContent_Cache\Hooks {
     function ensure_post_content_cached() {
         if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
 
-        global $post;
-		if ( ! ( $post instanceof \WP_Post ) ) return;
-        if ( ! \has_blocks( $post ) ) return;
-        // Password-protected posts must never be cached: the object cache is not
-        // cookie-aware, so cached content would be served to unauthenticated visitors.
-        if ( \post_password_required( $post ) ) return;
         // Preview requests show unpublished content; caching them would expose draft
         // content to regular visitors via the shared object cache.
         if ( \is_preview() ) return;
+
+        global $post;
+		if ( ! ( $post instanceof \WP_Post ) ) return;
+
+        // Password-protected posts must never be cached: the object cache is not
+        // cookie-aware, so cached content would be served to unauthenticated visitors.
+        if ( \post_password_required( $post ) ) return;
+
+        if ( ! \has_blocks( $post ) ) return;
+
+        // Restore cached Style Engine CSS early (before wp_head finishes)
+        \add_action( 'wp_enqueue_scripts',
+            __NAMESPACE__ . '\\restore_cached_style_engine_css', 100 );
+
+        \add_action( 'enqueue_block_assets',
+            __NAMESPACE__ . '\\maybe_optimize_block_asset_enqueues', 1);
 
         $cached = \VIP_PostContent_Cache\Cache\get( $post->ID );
         if ( empty( $cached ) ) \VIP_PostContent_Cache\Cache\set( $post->ID );
@@ -101,13 +104,16 @@ namespace VIP_PostContent_Cache\Hooks {
     function ensure_post_content_loaded() {
         if ( ! \is_singular( \VIP_PostContent_Cache\Allow\posttypes() ) ) return;
 
-        global $post;
-        // Do not register the load filter for password-protected posts — let WordPress
-        // handle them normally so the password form is presented without interference.
-        if ( ( $post instanceof \WP_Post ) && \post_password_required( $post ) ) return;
         // Preview requests must not serve cached content — the previewed version may
         // differ from what is published.
         if ( \is_preview() ) return;
+
+        global $post;
+		if ( ! ( $post instanceof \WP_Post ) ) return;
+
+        // Password-protected posts must never be cached: the object cache is not
+        // cookie-aware, so cached content would be served to unauthenticated visitors.
+        if ( \post_password_required( $post ) ) return;
 
         \add_filter( 'the_content', '\VIP_PostContent_Cache\Cache\load', 1, 1 );
     }
@@ -219,13 +225,6 @@ namespace VIP_PostContent_Cache\Cache {
 
         // If there are no blocks at all, ensure any old cache is removed
         if ( ! has_blocks( $the_post ) ) {
-            delete( $post_id );
-            return;
-        }
-
-        // Safety net: never cache password-protected posts. The object cache is shared
-        // and not cookie-aware, so this content must always be rendered by WordPress directly.
-        if ( \post_password_required( $the_post ) ) {
             delete( $post_id );
             return;
         }
@@ -685,6 +684,16 @@ namespace VIP_PostContent_Cache\Admin {
 	function on_save_post( $post_id, $post ) {
 		if ( ! in_array( $post->post_type, \VIP_PostContent_Cache\Allow\posttypes(), true ) ) return;
 		if ( \wp_is_post_autosave( $post_id ) || \wp_is_post_revision( $post_id ) ) return;
+
+        // Password-protected posts must never be cached. Cancel any pending AS job
+        // and clear the cache so protected content is never served from object cache.
+        if ( \post_password_required( $post ) ) {
+            if ( \VIP_PostContent_Cache\Allow\is_as() ) {
+                \as_unschedule_all_actions( \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME, [ $post_id ] );
+            }
+            \VIP_PostContent_Cache\Cache\delete( $post_id );
+            return;
+        }
 
         $option_enabled = (bool) \get_option( \VIP_PostContent_Cache\Admin\CACHE_REFRESH_ENABLE_OPTION, false );
 
