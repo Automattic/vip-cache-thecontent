@@ -406,30 +406,30 @@ namespace VIP_PostContent_Cache\Misc {
 
         if ( ! $block_type ) return null;
 
-        $styles_scripts_list = [ ‘style’ => [], ‘script’ => [], ‘module’ => [] ];
+        $styles_scripts_list = [ 'style' => [], 'script' => [], 'module' => [] ];
 
         // style can be string or array
         $styles = $block_type->style ?? [];
         foreach ( (array) $styles as $h ) {
-            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘style’][] = $h;
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['style'][] = $h;
         }
 
         // prefer view_script for frontend behavior
         $view_scripts = $block_type->view_script ?? [];
         foreach ( (array) $view_scripts as $h ) {
-            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘script’][] = $h;
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['script'][] = $h;
         }
 
         // keep legacy ‘script’ for blocks that still use it
         $scripts = $block_type->script ?? [];
         foreach ( (array) $scripts as $h ) {
-            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘script’][] = $h;
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['script'][] = $h;
         }
 
         // WP 6.5+: Interactivity API module IDs (viewScriptModule in block.json)
         $modules = $block_type->view_script_module_ids ?? [];
         foreach ( (array) $modules as $h ) {
-            if ( is_string( $h ) && $h !== ‘’ ) $styles_scripts_list[‘module’][] = $h;
+            if ( is_string( $h ) && $h !== '' ) $styles_scripts_list['module'][] = $h;
         }
 
         return $styles_scripts_list;
