@@ -584,26 +584,54 @@ namespace VIP_PostContent_Cache\Admin {
     const CACHE_REFRESH_CRON_NAME     = 'vip_thecontentcache_schedule_set';
 
     \add_action( 'admin_init', '\VIP_PostContent_Cache\Admin\ui_register_enable_option' );
-    \add_action( 'admin_init', '\VIP_PostContent_Cache\Admin\register' );
+    \add_action( 'init', '\VIP_PostContent_Cache\Admin\register' );
 
     /**
-     * Registers admin-side hooks for cache management and background regeneration.
+     * Registers cache-management and background-regeneration hooks.
+     *
+     * Runs on `init` (not `admin_init`) because the contexts that invalidate or
+     * rebuild the cache are not admin page loads:
+     * - Block editor saves arrive over the REST API, where `admin_init` never fires.
+     * - Action Scheduler runs its queue in WP-Cron, where `admin_init` never fires.
+     *
+     * To avoid attaching on normal front-end reads, it bails out unless the request
+     * can actually mutate a post or run a background job: an admin request (classic
+     * editor saves + list-table trash/delete row actions + admin-ajax), a REST *write*
+     * (block editor save/trash — public REST GET reads are skipped), or a cron run
+     * (Action Scheduler).
      *
      * Hooks added:
-     * - `save_post` → triggers post cache scheduling or deletion logic.
-     * - `wp_trash_post` → deletes cache for trashed posts.
-     * - Action Scheduler hook (CACHE_REFRESH_CRON_NAME) → calls Cache\set() when scheduled.
-     *
-     * This function runs on `admin_init` and prepares the admin environment
-     * for both manual and automated cache invalidation.
+     * - `save_post_{post_type}` (per allowed type) → cache scheduling or deletion.
+     * - `wp_trash_post` / `before_delete_post` → deletes cache for removed posts.
+     * - Action Scheduler hook (CACHE_REFRESH_CRON_NAME) → calls Cache\set().
      *
      * @return void
      */
     function register() {
-		\add_action( 'save_post',
-			'\VIP_PostContent_Cache\Admin\on_save_post', 10, 2 );
-		\add_action( 'wp_trash_post',
-			'\VIP_PostContent_Cache\Admin\on_trash_post', 10, 1 );
+        $method   = \strtoupper( $_SERVER['REQUEST_METHOD'] ?? 'GET' );
+        $is_write = \in_array( $method, [ 'POST', 'PUT', 'PATCH', 'DELETE' ], true );
+
+        // Attach only where a post can be mutated or a background job runs; bail out
+        // on everything else (front-end views, public REST GET reads).
+        if ( ! \is_admin()
+            && ! ( \wp_is_json_request() && $is_write )
+            && ! \wp_doing_cron() ) {
+            return;
+        }
+
+        // Only the post types we actually cache — no generic save_post, no in_array().
+        foreach ( \VIP_PostContent_Cache\Allow\posttypes() as $post_type ) {
+            \add_action( "save_post_{$post_type}",
+                '\VIP_PostContent_Cache\Admin\on_content_save', 10, 2 );
+        }
+
+        // Trash + permanent delete: cheap key removal, no per-type hook exists, and
+        // deleting a missing key is a harmless no-op for non-cached post types.
+        \add_action( 'wp_trash_post',
+            '\VIP_PostContent_Cache\Admin\on_content_remove', 10, 1 );
+        \add_action( 'before_delete_post',
+            '\VIP_PostContent_Cache\Admin\on_content_remove', 10, 1 );
+
         \add_action( \VIP_PostContent_Cache\Admin\CACHE_REFRESH_CRON_NAME,
             '\VIP_PostContent_Cache\Cache\set', 10 );
     }
@@ -653,15 +681,16 @@ namespace VIP_PostContent_Cache\Admin {
     }
 
     /**
-     * Deletes cached content for a post when it is moved to the trash.
+     * Deletes cached content for a post when it is removed.
      *
-     * This removes both cached HTML and cached block asset lists
-     * to prevent stale content from being served.
+     * Fires for both trashing (`wp_trash_post`) and permanent deletion
+     * (`before_delete_post`), removing the cached HTML and block asset list
+     * so stale content is never served.
      *
-     * @param int $post_id ID of the post being trashed.
+     * @param int $post_id ID of the post being removed.
      * @return void
      */
-	function on_trash_post( $post_id ) {
+	function on_content_remove( $post_id ) {
 		\VIP_PostContent_Cache\Cache\delete( $post_id );
 	}
 
@@ -670,7 +699,7 @@ namespace VIP_PostContent_Cache\Admin {
      *
      * Behavior:
      * - Ignores autosaves and revisions.
-     * - Only operates on post types allowed by the plugin's allowlist.
+     * - Only fires for allowed post types (guaranteed by the save_post_{type} hook).
      * - If Action Scheduler is unavailable, cache is deleted immediately.
      * - If enabled via settings, schedules a background cache rebuild via
      *   Action Scheduler (idempotent: skips scheduling if already queued).
@@ -681,8 +710,8 @@ namespace VIP_PostContent_Cache\Admin {
      * @param WP_Post $post     Post object.
      * @return void
      */
-	function on_save_post( $post_id, $post ) {
-		if ( ! in_array( $post->post_type, \VIP_PostContent_Cache\Allow\posttypes(), true ) ) return;
+	function on_content_save( $post_id, $post ) {
+		// Post type is guaranteed by the save_post_{type} hook — no in_array() needed.
 		if ( \wp_is_post_autosave( $post_id ) || \wp_is_post_revision( $post_id ) ) return;
 
         // Password-protected posts must never be cached. Cancel any pending AS job
