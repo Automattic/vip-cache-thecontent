@@ -39,6 +39,22 @@ function vip_cache_thecontent_add_posttype( array $list ) {
 }
 ```
 
+# Special Cases
+
+The following post types are automatically excluded from caching. WordPress handles them through its normal rendering pipeline without any interference from this plugin.
+
+## Password-Protected Posts
+
+Posts that require a password are never cached. The object cache is shared across all visitors and has no awareness of cookies or authentication state. Caching the content of a password-protected post would expose the full block output to unauthenticated visitors, bypassing WordPress's access control entirely.
+
+When a password-protected post is requested, the plugin steps aside and lets WordPress present its standard password form and handle content rendering as normal.
+
+## Post Previews
+
+Preview requests are never cached and never serve cached content. A preview may display an unpublished draft or a pending revision — content that differs from what is publicly visible. Because the object cache is shared, caching a preview would expose draft content to regular visitors on the next request.
+
+Note: `is_admin()` does not cover this case. Post previews load on the front-end (the preview URL is not a wp-admin URL), so the plugin explicitly checks `is_preview()` at the point where the query is available.
+
 # Background Cache Regeneration (Optional)
 
 A settings checkbox is available under:
@@ -56,5 +72,9 @@ If Action Scheduler is not available:
 1. The checkbox will not be shown.
 2. The option will be automatically disabled.
 3. Cached entries will be cleared immediately on post save, falling back to standard regeneration on the next frontend request.
+
+If Action Scheduler is available but the checkbox is **disabled**:
+1. Any pending background rebuild jobs for the saved post are cancelled.
+2. Cached entries are cleared immediately on post save, same as the no-Action-Scheduler fallback.
 
 This ensures consistent behavior regardless of environment support.
